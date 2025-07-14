@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单生成器</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: auto; }
+        label, input, button { display: block; margin-top: 10px; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+        .order-item { padding: 10px; border-bottom: 1px solid #ddd; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>订单生成器</h2>
+    <label for="t">请输入 T：</label>
+    <input type="number" id="t" min="1" required>
+
+    <label for="cntMin">cnt 最小值：</label>
+    <input type="number" id="cntMin" min="1" required>
+
+    <label for="cntMax">cnt 最大值：</label>
+    <input type="number" id="cntMax" min="1" required>
+
+    <button onclick="startPolling()">开始轮询</button>
+
+    <div id="result"></div>
+</div>
+
+<script>
+    let iteration = 1;
+    let pollingTimeouts = [];
+
+    function fetchOrders() {
+        const t = parseInt(document.getElementById("t").value);
+        const cntMin = parseInt(document.getElementById("cntMin").value);
+        const cntMax = parseInt(document.getElementById("cntMax").value);
+
+        if (!t || !cntMin || !cntMax || cntMin > cntMax) {
+            alert("请正确填写所有字段，并确保 cntMin ≤ cntMax");
+            return;
+        }
+
+        const cnt = Math.floor(Math.random() * (cntMax - cntMin + 1)) + cntMin;
+
+        const requestData = {
+            iteration: iteration++,
+            t: t,
+            cnt: cnt
+        };
+
+        fetch("http://116.198.242.154:18081/order/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestData)
+        })
+            .then(response => response.json())
+            .then(data => {
+                const resultDiv = document.getElementById("result");
+                data.data.forEach(order => {
+                    const orderElement = document.createElement("div");
+                    orderElement.classList.add("order-item");
+                    orderElement.innerHTML = `<strong>订单 ID:</strong> ${order.orderId}<br>
+                                              <strong>类型:</strong> ${order.type}<br>
+                                              <strong>入口:</strong> ${order.inputPort}<br>
+                                              <strong>出口:</strong> ${order.outputPort}<br>
+                                              <strong>处理时间:</strong> ${order.duration}<br>
+                                              <strong>时间:</strong> ${order.startTime}`;
+                    resultDiv.appendChild(orderElement);
+                });
+            })
+            .catch(error => {
+                console.error("请求失败:", error);
+                const errorElement = document.createElement("div");
+                errorElement.textContent = "请求失败";
+                document.getElementById("result").appendChild(errorElement);
+            });
+    }
+
+    function startPolling() {
+        fetchOrders();
+
+        const t = parseInt(document.getElementById("t").value);
+        if (!t) {
+            alert("请输入有效的 T 值");
+            return;
+        }
+
+        pollingTimeouts.forEach(timeout => clearTimeout(timeout));
+        pollingTimeouts = [];
+
+        function scheduleNextRequest(iteration) {
+            const delay = iteration * t * 1000 - 1000;
+            const timeout = setTimeout(() => {
+                fetchOrders();
+                scheduleNextRequest(iteration + 1);
+            }, delay);
+            pollingTimeouts.push(timeout);
+        }
+
+        scheduleNextRequest(1);
+    }
+</script>
+</body>
+</html>
