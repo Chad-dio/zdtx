@@ -3,6 +3,7 @@ package com.example.zdtx.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import com.example.zdtx.domain.dto.instruction.InstructionAddDTO;
+import com.example.zdtx.domain.dto.instruction.InstructionCancelDTO;
 import com.example.zdtx.domain.entity.Result;
 import com.example.zdtx.service.InstructionServcie;
 import lombok.RequiredArgsConstructor;
@@ -52,13 +53,18 @@ public class InstructionServcieImpl implements InstructionServcie {
         if (requestparm == null || requestparm.isEmpty()) {
             return Result.success();
         }
+        //TODO:接收任务之后，是直接进行规划，
+        // 还是先加入等待队列然后一个定时任务进行反馈
         stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
             StringRedisSerializer keySer = new StringRedisSerializer();
             StringRedisSerializer valSer = new StringRedisSerializer();
 
             for (InstructionAddDTO dto : requestparm) {
                 String code = dto.getInstructionCode();
-                Integer score = dto.getPriority();
+                //先优先级，再先来后到
+                long now = System.currentTimeMillis();
+                double score = dto.getPriority() * 1e13 - now;
+
 
                 // ZADD task:waiting
                 connection.zAdd(
@@ -86,6 +92,19 @@ public class InstructionServcieImpl implements InstructionServcie {
             }
             return null;
         });
+        return Result.success();
+    }
+
+    @Override
+    public Result<Void> cancelInstruction(InstructionCancelDTO requestparm) {
+        String instructionCode = requestparm.getInstructionCode();
+        Double score = stringRedisTemplate.opsForZSet().score(TASK_WAITING_ZSET, instructionCode);
+        if(score == null){
+            return Result.error("任务已经启动");
+        }
+        stringRedisTemplate.opsForZSet().remove(TASK_WAITING_ZSET, instructionCode);
+        stringRedisTemplate.opsForHash().delete(TASK_INFO + instructionCode);
+
         return Result.success();
     }
 }

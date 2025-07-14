@@ -1,6 +1,7 @@
 package com.example.zdtx.controller;
 
 import com.example.zdtx.domain.dto.instruction.InstructionAddDTO;
+import com.example.zdtx.domain.dto.instruction.InstructionCancelDTO;
 import com.example.zdtx.domain.entity.Result;
 import com.example.zdtx.service.InstructionServcie;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ public class InstructionController {
     }
 
     @RequestMapping("/cancelInstruction")
-    Result<Void> cancelInstruction(@Valid @RequestBody InstructionAddDTO requestparm){
-        return instructionServcie.addInstruction(requestparm);
+    Result<Void> cancelInstruction(@Valid @RequestBody InstructionCancelDTO requestparm){
+        return instructionServcie.cancelInstruction(requestparm);
     }
 }
