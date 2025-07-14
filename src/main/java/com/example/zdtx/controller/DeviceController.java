@@ -1,5 +1,6 @@
 package com.example.zdtx.controller;
 
+import com.example.zdtx.domain.entity.Result;
 import com.example.zdtx.service.DeviceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,6 +11,5 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class DeviceController {
     private final DeviceService deviceService;
-
 
 }

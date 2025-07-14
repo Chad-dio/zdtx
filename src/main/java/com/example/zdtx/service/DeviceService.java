@@ -1,5 +1,7 @@
 package com.example.zdtx.service;
 
-public interface DeviceService {
+import com.example.zdtx.domain.dto.remote.DeviceStatusDTO;
 
+public interface DeviceService {
+    Integer isEndpointResourceAvailable(DeviceStatusDTO requestparm);
 }
