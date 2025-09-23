@@ -4,7 +4,7 @@ spring:
   application:
     name: zdtx
   redis:
-    host: 121.40.204.51
+    host: 116.198.242.154
     port: 6379
     #    password: 123321
     lettuce:
