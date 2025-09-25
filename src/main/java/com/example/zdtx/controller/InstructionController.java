@@ -3,6 +3,7 @@ package com.example.zdtx.controller;
 import com.example.zdtx.domain.dto.instruction.InstructionAddDTO;
 import com.example.zdtx.domain.dto.instruction.InstructionCancelDTO;
 import com.example.zdtx.domain.entity.Result;
+import com.example.zdtx.domain.vo.InstructionExVO;
 import com.example.zdtx.service.InstructionServcie;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -34,7 +35,7 @@ public class InstructionController {
     }
 
     @GetMapping("/getInstructions")
-    Result<List<String>> getInstructions(){
+    Result<List<InstructionExVO>> getInstructions(){
         return instructionServcie.getInstructions();
     }
 

@@ -4,6 +4,7 @@ import com.example.zdtx.domain.dto.instruction.InstructionAddDTO;
 import com.example.zdtx.domain.dto.instruction.InstructionCancelDTO;
 import com.example.zdtx.domain.dto.instruction.InstructionQueryDTO;
 import com.example.zdtx.domain.entity.Result;
+import com.example.zdtx.domain.vo.InstructionExVO;
 
 import java.util.List;
 
@@ -16,7 +17,7 @@ public interface InstructionServcie {
 
     Boolean queryInstruction(InstructionQueryDTO requestparm);
 
-    Result<List<String>> getInstructions();
+    Result<List<InstructionExVO>> getInstructions();
 
     Result<Void> clear();
 }

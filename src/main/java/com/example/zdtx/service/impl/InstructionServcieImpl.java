@@ -8,11 +8,14 @@ import com.example.zdtx.domain.dto.instruction.InstructionAddDTO;
 import com.example.zdtx.domain.dto.instruction.InstructionCancelDTO;
 import com.example.zdtx.domain.dto.instruction.InstructionQueryDTO;
 import com.example.zdtx.domain.entity.Result;
+import com.example.zdtx.domain.vo.InstructionExVO;
 import com.example.zdtx.service.InstructionServcie;
 import com.example.zdtx.utils.HttpUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 
@@ -137,47 +140,88 @@ public class InstructionServcieImpl implements InstructionServcie {
     }
 
     @Override
-    public Result<List<String>> getInstructions() {
+    public Result<List<InstructionExVO>> getInstructions() {
+        List<InstructionExVO> instructions = getInstructionsBySchedule(MAX_TASK);
+        if (instructions.isEmpty()) {
+            return Result.success(Collections.emptyList(), "暂无待执行的指令");
+        }
+        return Result.success(instructions, "获取成功");
+    }
 
-        // 1) 读取当前运行中的任务（可能为空）
-        Set<String> running = stringRedisTemplate.opsForZSet()
-                .range(TASK_RUNNING_ZSET, 0, -1);
-        if (running == null) running = java.util.Collections.emptySet();
+    public List<InstructionExVO> getInstructionsBySchedule(int size) {
+        if (size <= 0) return Collections.emptyList();
 
-        int runningSize = running.size();
-        int slots = Math.max(0, MAX_TASK - runningSize);
+        // 1) 候选取自等待队列（分数高在前）。如需窗口可把 -1 换为 windowSize-1
+        Set<String> candidates = stringRedisTemplate.opsForZSet()
+                .reverseRange(TASK_WAITING_ZSET, 0, -1);
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        // 2) 如果还有空位，从等待队列按优先级原子弹出
-        java.util.List<String> poppedCodes = java.util.Collections.emptyList();
-        if (slots > 0) {
-            var tuples = stringRedisTemplate.opsForZSet()
-                    .popMax(TASK_WAITING_ZSET, slots);
-            if (tuples != null && !tuples.isEmpty()) {
-                poppedCodes = tuples.stream()
-                        .map(org.springframework.data.redis.core.ZSetOperations.TypedTuple::getValue)
-                        .filter(Objects::nonNull)
-                        .toList();
+        // 用 List 保持顺序，pipeline 的返回与此一一对应
+        final List<String> codes = new ArrayList<>(candidates);
 
-                // 3) 将新弹出的任务加入 RUNNING 集合
-                //    分数可用“开始时间戳”，便于后续按启动顺序查看
-                long now = System.currentTimeMillis();
-                for (int i = 0; i < poppedCodes.size(); i++) {
-                    String code = poppedCodes.get(i);
-                    stringRedisTemplate.opsForZSet()
-                            .add(TASK_RUNNING_ZSET, code, now + i);
+        // 2) pipeline 批量 HGETALL，结果就是 Map<Object,Object>，无需自己反序列化
+        final List<Object> results = stringRedisTemplate.executePipelined(
+                new org.springframework.data.redis.core.SessionCallback<Object>() {
+                    @Override
+                    public Object execute(org.springframework.data.redis.core.RedisOperations operations)
+                            throws org.springframework.dao.DataAccessException {
+                        for (String code : codes) {
+                            operations.opsForHash().entries(TASK_INFO + code);
+                        }
+                        return null; // 必须返回 null 才会把 pipeline 结果带出来
+                    }
+                }
+        );
+
+        // 安全兜底：results 可能为 null（极少数实现），做一致性处理
+        final int n = codes.size();
+        final List<InstructionExVO> list = new ArrayList<>(n);
+
+        for (int i = 0; i < n; i++) {
+            String code = codes.get(i);
+            Map<Object, Object> m = null;
+            if (results != null && i < results.size() && results.get(i) instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<Object, Object> tmp = (Map<Object, Object>) results.get(i);
+                m = tmp;
+            }
+
+            InstructionExVO vo = new InstructionExVO();
+            vo.setInstructionCode(code);
+
+            if (m != null && !m.isEmpty()) {
+                vo.setLocationFrom((String) m.get("locationFrom"));
+                vo.setLocationTo((String) m.get("locationTo"));
+                Object p = m.get("priority");
+                if (p != null) {
+                    try { vo.setPriority(Integer.valueOf(p.toString())); } catch (NumberFormatException ignore) {}
                 }
             }
+            list.add(vo);
         }
 
-        // 4) 结果：running ∪ popped（去重 Set 再转 List）
-        LinkedHashSet<String> result = new LinkedHashSet<>(running);
-        result.addAll(poppedCodes);
+        // 3) 调度算法占位（在此就地排序，后续你替换为真实算法）
+        schedule(list);
 
-        if (result.isEmpty()) {
-            return Result.success(java.util.List.of(), "暂无待执行的指令");
-        }
-        return Result.success(new ArrayList<>(result), "获取待执行指令成功");
+        // 4) 仅截取前 size 条返回（不修改、不删除 Redis）
+        return list.size() > size ? list.subList(0, size) : list;
     }
+
+    /** 调度算法占位：先按 priority 降序，再按 instructionCode 升序 */
+    private void schedule(List<InstructionExVO> list) {
+        list.sort((a, b) -> {
+            int ap = a.getPriority() == null ? 0 : a.getPriority();
+            int bp = b.getPriority() == null ? 0 : b.getPriority();
+            int c = Integer.compare(bp, ap); // priority desc
+            if (c != 0) return c;
+            String ac = a.getInstructionCode() == null ? "" : a.getInstructionCode();
+            String bc = b.getInstructionCode() == null ? "" : b.getInstructionCode();
+            return ac.compareTo(bc); // code asc
+        });
+    }
+
 
     @Override
     public Result<Void> clear() {
