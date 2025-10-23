@@ -17,4 +17,14 @@ public class InstructionExVO {
     private String locationTo;
 
     private Integer priority;
+
+    @Override
+    public String toString() {
+        return "指令信息 {" +
+                "指令号='" + instructionCode + '\'' +
+                ", 起点='" + locationFrom + '\'' +
+                ", 终点='" + locationTo + '\'' +
+                ", 优先级=" + priority +
+                '}' + '\n';
+    }
 }

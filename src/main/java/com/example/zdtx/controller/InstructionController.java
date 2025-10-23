@@ -35,7 +35,7 @@ public class InstructionController {
     }
 
     @GetMapping("/getInstructions")
-    Result<List<InstructionExVO>> getInstructions(){
+    Result<List<InstructionExVO>> getInstructions() throws InterruptedException {
         return instructionServcie.getInstructions();
     }
 

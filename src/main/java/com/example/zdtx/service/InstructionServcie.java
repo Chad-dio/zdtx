@@ -17,7 +17,7 @@ public interface InstructionServcie {
 
     Boolean queryInstruction(InstructionQueryDTO requestparm);
 
-    Result<List<InstructionExVO>> getInstructions();
+    Result<List<InstructionExVO>> getInstructions() throws InterruptedException;
 
     Result<Void> clear();
 }
