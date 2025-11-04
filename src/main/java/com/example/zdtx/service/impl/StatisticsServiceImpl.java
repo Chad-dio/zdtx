@@ -52,19 +52,19 @@ public class StatisticsServiceImpl implements StatisticsService {
         // 含义：第一次写入保存 startedAt(ms)，第二次写入覆盖成 duration(ms)
         final String key = TASK_COMPLETED_SET + code;
 
-        System.out.println("[" + ts() + "]尝试写入启动时间：key = " + key + "，时间 = " + now);
-
-        // === 1) 尝试写入“启动时间”（原子、幂等） ===
-        Boolean firstStart = stringRedisTemplate.opsForValue()
-                .setIfAbsent(key, String.valueOf(now));
-        Double score = stringRedisTemplate.opsForZSet().score(TASK_WAITING_ZSET, code);
-        if (Boolean.TRUE.equals(firstStart) && score != null) {
-            // 启动：从等待队列移除该成员，并清理详情（如果有）
-            stringRedisTemplate.opsForZSet().remove(TASK_WAITING_ZSET, code);
-            stringRedisTemplate.delete(TASK_INFO + code);
-            System.out.println("[" + ts() + "]启动时间记录成功，移除等待队列中的指令，并清理详情");
-            return Result.success(Boolean.TRUE, "启动已记录");
-        }
+//        System.out.println("[" + ts() + "]尝试写入启动时间：key = " + key + "，时间 = " + now);
+//
+//        // === 1) 尝试写入“启动时间”（原子、幂等） ===
+//        Boolean firstStart = stringRedisTemplate.opsForValue()
+//                .setIfAbsent(key, String.valueOf(now));
+//        Double score = stringRedisTemplate.opsForZSet().score(TASK_WAITING_ZSET, code);
+//        if (Boolean.TRUE.equals(firstStart) && score != null) {
+//            // 启动：从等待队列移除该成员，并清理详情（如果有）
+//            stringRedisTemplate.opsForZSet().remove(TASK_WAITING_ZSET, code);
+//            stringRedisTemplate.delete(TASK_INFO + code);
+//            System.out.println("[" + ts() + "]启动时间记录成功，移除等待队列中的指令，并清理详情");
+//            return Result.success(Boolean.TRUE, "启动已记录");
+//        }
 
         // === 2) 已经记录过启动 -> 视为“完成”，计算耗时 ===
         String startedStr = stringRedisTemplate.opsForValue().get(key);
@@ -115,10 +115,8 @@ public class StatisticsServiceImpl implements StatisticsService {
     }
 
     // ====================== 工具方法 ======================
-
-    /** TODO[可选] 自定义 OD 统计 Key 的规则 */
     private static String buildOdKey(String from, String to) {
-        // 统一大写并去空格；如需要可在这里做“入口名 -> 灰色节点”的映射以聚合统计
+        // 统一大写并去空格
         String f = normalize(from);
         String t = normalize(to);
         return OD_KEY_PREFIX + f + "|" + t;

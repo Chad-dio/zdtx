@@ -33,7 +33,7 @@ public class InstructionServcieImpl implements InstructionServcie {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    // ===================== 调度权重 & 历史项（可调） =====================
+    // ===================== 调度权重 & 历史项 =====================
 
     /** 基础权重 */
     private static final int Wp = 1000;  // 优先级权重（主导）
@@ -42,7 +42,7 @@ public class InstructionServcieImpl implements InstructionServcie {
 
     /** 路径重叠惩罚 */
     private static final int PcOpp = 5;  // 与队尾比较时，反向重叠的单段惩罚
-    private static final int PcSame = 1; // 与队尾比较时，同向重叠的轻微惩罚（可设为0或-1作为奖励）
+    private static final int PcSame = 1; // 与队尾比较时，同向重叠的轻微惩罚（0或-1作为奖励）
     private static final int LOOKBACK = 3; // 与队尾最近几条比较
 
     /** 历史期望耗时 + 风险溢价（来自 stats:od:FROM|TO） */
@@ -160,36 +160,86 @@ public class InstructionServcieImpl implements InstructionServcie {
     @Override
     public Boolean queryInstruction(InstructionQueryDTO requestparm) {
         //向上游系统查询这个指令是否可以被释放
-        String url = "xxxx";
-        String s = HttpUtils.postForm(url, BeanUtil.beanToMap(
-                requestparm,
-                new HashMap<>(),
-                CopyOptions.create().ignoreNullValue()
-        ));
-        JSONObject json = JSONUtil.parseObj(s);
-        int code = json.getInt("responseCode");
-        if (code != 0) {
-            throw new RuntimeException("查询指令状态失败: " + json.getStr("responseMessage"));
-        }
-        return json.getBool("status", true);
+        return true;
+        //TODO: wait url zdtx
+//        String url = "xxxx";
+//        String s = HttpUtils.postForm(url, BeanUtil.beanToMap(
+//                requestparm,
+//                new HashMap<>(),
+//                CopyOptions.create().ignoreNullValue()
+//        ));
+//        JSONObject json = JSONUtil.parseObj(s);
+//        int code = json.getInt("responseCode");
+//        if (code != 0) {
+//            throw new RuntimeException("查询指令状态失败: " + json.getStr("responseMessage"));
+//        }
+//        return json.getBool("status", true);
     }
 
     @Override
     public Result<List<InstructionExVO>> getInstructions() throws InterruptedException {
         System.out.println();
-        System.out.println("[" + getCurrentTimestamp() + "]getInstructions 方法被调用");
-        System.out.println("[" + getCurrentTimestamp() + "]进入指令调度");
-        Thread.sleep(1000);
-        List<InstructionExVO> instructions = getInstructionsBySchedule(MAX_TASK);
-        if (instructions.isEmpty()) {
-            System.out.println("[" + getCurrentTimestamp() + "]暂无待执行的指令");
+        System.out.println("[" + getCurrentTimestamp() + "] getInstructions 方法被调用");
+        System.out.println("[" + getCurrentTimestamp() + "] 进入指令调度");
+
+        // 1) 按调度获取待执行指令
+        List<InstructionExVO> scheduled = getInstructionsBySchedule(MAX_TASK);
+
+        if (scheduled == null || scheduled.isEmpty()) {
+            System.out.println("[" + getCurrentTimestamp() + "] 暂无待执行的指令");
             return Result.success(Collections.emptyList(), "暂无待执行的指令");
         }
-        System.out.println("[" + getCurrentTimestamp() + "]获取到待执行的指令：" + instructions.size() + " 条");
+
+        // 2) 询问（校验）可执行性，将不可立即执行的指令移动到队尾
+        List<InstructionExVO> ready = new ArrayList<>(scheduled.size());
+        List<InstructionExVO> deferred = new ArrayList<>();
+
+        for (InstructionExVO vo : scheduled) {
+            Boolean can = queryInstruction(
+                    new InstructionQueryDTO(vo.getLocationFrom(), vo.getLocationTo())
+            );
+            if (Boolean.TRUE.equals(can)) {
+                ready.add(vo);
+            } else {
+                deferred.add(vo);
+            }
+        }
+
+        // 3) 重新组装顺序：可执行在前，顺延在后（保持各自相对顺序稳定）
+        List<InstructionExVO> ordered = new ArrayList<>(ready.size() + deferred.size());
+        ordered.addAll(ready);
+        ordered.addAll(deferred);
+
+        // 为能够进行的记录启动时间
+        final long now = System.currentTimeMillis();
+        ready.forEach(
+                instruction -> {
+                    String code = instruction.getInstructionCode();
+                    String key = TASK_COMPLETED_SET + code;
+                    System.out.println("[" + ts() + "]尝试写入启动时间：key = " + key + "，时间 = " + now);
+
+                    // 尝试写入“启动时间” ===
+                    Boolean firstStart = stringRedisTemplate.opsForValue()
+                            .setIfAbsent(key, String.valueOf(now));
+                    Double score = stringRedisTemplate.opsForZSet().score(TASK_WAITING_ZSET, code);
+                    if (Boolean.TRUE.equals(firstStart) && score != null) {
+                        // 启动：从等待队列移除该成员，并清理详情（如果有）
+                        stringRedisTemplate.opsForZSet().remove(TASK_WAITING_ZSET, code);
+                        stringRedisTemplate.delete(TASK_INFO + code);
+                        System.out.println("[" + ts() + "]启动时间记录成功，移除等待队列中的指令，并清理详情");
+                    }
+                }
+        );
+
+        // 4) 日志与返回
+        System.out.println("[" + getCurrentTimestamp() + "] 获取到待执行的指令："
+                + ordered.size() + " 条（可立即执行：" + ready.size() + "，顺延：" + deferred.size() + "）");
         System.out.println("具体为:");
-        System.out.println(instructions);
-        return Result.success(instructions, "获取成功");
+        System.out.println(ordered);
+
+        return Result.success(ordered, "获取成功");
     }
+
 
     public List<InstructionExVO> getInstructionsBySchedule(int size) {
         if (size <= 0) return Collections.emptyList();
@@ -247,8 +297,8 @@ public class InstructionServcieImpl implements InstructionServcie {
         // 3) 调度算法：优先级 + 等待时间 + 历史项 + 最小冲突（纯内存，不加锁）
         schedule(list);
 
-        // 4) 仅截取前 size 条返回（不修改、不删除 Redis）
-        return list.size() > size ? list.subList(0, size) : list;
+        // 4) 返回
+        return list;
     }
 
     @Override
@@ -409,7 +459,7 @@ public class InstructionServcieImpl implements InstructionServcie {
         @Override public String toString(){ return "Seg{id="+id+",dir="+dir+"}"; }
     }
 
-    /** 方向策略（保留扩展性） */
+    /** 方向策略*/
     public enum DirectionPolicy {
         SHORTEST, CLOCKWISE, COUNTERCLOCKWISE
     }
@@ -429,14 +479,11 @@ public class InstructionServcieImpl implements InstructionServcie {
 
     /**
      * 出入口（彩色）节点 → 灰色主环节点的【一个或多个】锚点
-     * - 若一个口在图上有两根蓝线/两条分支接到主环两个灰点，就写成两个锚点；
-     * - 名称统一大写；示例里 IN2_* 展示了“多锚点”的写法。
      */
     private static final Map<String, List<String>> ATTACH = new HashMap<String, List<String>>() {{
         put("IN1_ENTRY",   Arrays.asList("G68"));  put("IN1_EXIT",   Arrays.asList("G68"));
         put("OUT1_ENTRY",  Arrays.asList("G01"));  put("OUT1_EXIT",  Arrays.asList("G01"));
 
-        // 这里演示“多锚点”：IN2 在主环上有两个落点（请按实际替换 Gxx）
         put("IN2_ENTRY",   Arrays.asList("G65","G66"));
         put("IN2_EXIT",    Arrays.asList("G65","G66"));
         put("OUT2_ENTRY",  Arrays.asList("G04"));
@@ -618,6 +665,12 @@ public class InstructionServcieImpl implements InstructionServcie {
         }
         sb.append("]");
         return sb.toString();
+    }
+
+    // ====================== 时间工具方法 ======================
+    private static String ts() {
+        LocalDateTime now = LocalDateTime.now();
+        return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 
 }
