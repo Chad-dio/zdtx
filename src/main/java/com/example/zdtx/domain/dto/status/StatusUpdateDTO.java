@@ -20,5 +20,8 @@ public class StatusUpdateDTO {
     @NotNull(message = "终点不能为空")
     private String locationTo;
 
+    @NotNull(message = "容器号不能为空")
+    private String containerCode;
+
     private Date time;
 }

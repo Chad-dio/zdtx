@@ -13,4 +13,8 @@ public class RedisConstants {
     public static final String TASK_CANCELLED_SET       = "task:cancelled";
 
     public static final Integer MAX_TASK = 6;
+
+    public static final String CONTAINER_LAST =  "stats:container:last:";
+
+    public static final String CONTAINER_DURATION =  "stats:container:duration:";
 }

@@ -18,6 +18,8 @@ public class InstructionExVO {
 
     private Integer priority;
 
+    private String containerCode;
+
     @Override
     public String toString() {
         return "指令信息 {" +

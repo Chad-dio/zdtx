@@ -13,7 +13,7 @@ public interface InstructionServcie {
 
     Result<Void> addInstructions(List<InstructionAddDTO> requestparm);
 
-    Result<Void> cancelInstruction(InstructionCancelDTO requestparm);
+    Result<String> cancelInstruction(InstructionCancelDTO requestparm);
 
     Boolean queryInstruction(InstructionQueryDTO requestparm);
 

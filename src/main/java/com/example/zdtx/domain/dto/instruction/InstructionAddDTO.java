@@ -12,9 +12,9 @@ import javax.validation.constraints.NotNull;
 public class InstructionAddDTO {
     @NotNull(message = "指令号不能为空")
     private String instructionCode;
-//
-//    @NotNull(message = "容器号不能为空")
-//    private String containerCode;
+
+    @NotNull(message = "容器号不能为空")
+    private String containerCode;
 
     @NotNull(message = "起点不能为空")
     private String locationFrom;
@@ -24,6 +24,7 @@ public class InstructionAddDTO {
 
     @NotNull(message = "优先级不能为空")
     private Integer priority;
+
 
     @Override
     public String toString() {
